@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Model Viewer</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #161616;
+      color: #d4d4d4;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ---- Header ---- */
+    #header {
+      height: 44px;
+      background: #202020;
+      border-bottom: 1px solid #2e2e2e;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+    #header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f0f0f0;
+      letter-spacing: 0.02em;
+    }
+    #header .sep { color: #3a3a3a; font-size: 18px; }
+    #model-name-display {
+      font-size: 13px;
+      color: #777;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #header-right {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    /* ---- Layout ---- */
+    #body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ---- Sidebar ---- */
+    #sidebar {
+      width: 256px;
+      min-width: 200px;
+      background: #1c1c1c;
+      border-right: 1px solid #2e2e2e;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    #sidebar-top {
+      padding: 10px;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    #open-folder-btn {
+      width: 100%;
+      padding: 8px 0;
+      background: #2b5ce6;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      letter-spacing: 0.01em;
+    }
+    #open-folder-btn:hover { background: #3d70f5; }
+    #open-folder-btn:active { background: #2048c8; }
+
+    #path-bar {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 0 2px;
+    }
+
+    #file-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    .section-label {
+      padding: 10px 12px 3px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #484848;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 12.5px;
+      color: #aaa;
+      transition: background 0.08s;
+      border-left: 2px solid transparent;
+    }
+    .file-item:hover { background: #232323; color: #ddd; }
+    .file-item.active {
+      background: #1a2e52;
+      color: #6fa8ff;
+      border-left-color: #2b5ce6;
+    }
+    .file-item .fi-icon {
+      flex-shrink: 0;
+      width: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: #555;
+    }
+    .file-item.dir .fi-icon { color: #6a8fc4; }
+    .file-item .fi-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .fi-badge {
+      flex-shrink: 0;
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      background: #2a2a2a;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .fi-badge.glb, .fi-badge.gltf { background: #1a3a1a; color: #5a9e5a; }
+    .fi-badge.obj { background: #2a2a1a; color: #9e8a3a; }
+    .fi-badge.fbx { background: #1a2a3a; color: #3a7a9e; }
+    .fi-badge.stl { background: #2a1a2a; color: #7a3a9e; }
+
+    .no-files-msg {
+      padding: 24px 16px;
+      text-align: center;
+      color: #444;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    /* ---- Viewer ---- */
+    #viewer-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: #111;
+    }
+    #render-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Empty / Loading states */
+    #empty-state {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      color: #333;
+    }
+    .empty-icon {
+      width: 72px;
+      height: 72px;
+      margin-bottom: 16px;
+      opacity: 0.4;
+    }
+    #empty-state p {
+      font-size: 14px;
+      color: #444;
+    }
+    #empty-state small {
+      font-size: 11px;
+      color: #383838;
+      margin-top: 6px;
+    }
+
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(17,17,17,0.82);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      backdrop-filter: blur(3px);
+    }
+    #loading-overlay.show { display: flex; }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid #2a2a2a;
+      border-top-color: #2b5ce6;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { font-size: 13px; color: #777; }
+
+    /* Floating viewer controls */
+    #view-controls {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .vbtn {
+      padding: 5px 10px;
+      background: rgba(24,24,24,0.88);
+      border: 1px solid #363636;
+      border-radius: 4px;
+      color: #999;
+      font-size: 11px;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .vbtn:hover { background: rgba(40,40,40,0.92); color: #ddd; }
+    .vbtn.active { border-color: #2b5ce6; color: #6fa8ff; }
+
+    /* Stats HUD */
+    #stats-hud {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(0,0,0,0.65);
+      border: 1px solid #2a2a2a;
+      border-radius: 5px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #666;
+      line-height: 1.75;
+      display: none;
+      backdrop-filter: blur(4px);
+    }
+    #stats-hud.show { display: block; }
+    #stats-hud strong { color: #aaa; display: block; margin-bottom: 2px; }
+
+    /* ---- Animation Panel ---- */
+    #anim-panel {
+      background: #1a1a1a;
+      border-top: 1px solid #2a2a2a;
+      flex-shrink: 0;
+      display: none;
+    }
+    #anim-panel.show { display: flex; flex-direction: column; }
+
+    #anim-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      min-height: 52px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+
+    #anim-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #484848;
+      flex-shrink: 0;
+    }
+
+    .anim-transport {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+    #btn-play {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #2b5ce6;
+      border: none;
+      color: #fff;
+      font-size: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #btn-play:hover { background: #3d70f5; }
+    #btn-stop {
+      width: 26px;
+      height: 26px;
+      border-radius: 4px;
+      background: #252525;
+      border: 1px solid #383838;
+      color: #888;
+      font-size: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #btn-stop:hover { background: #303030; color: #ccc; }
+
+    #clip-list {
+      display: flex;
+      gap: 5px;
+      flex: 1;
+      overflow-x: auto;
+      padding: 2px 0;
+    }
+    .clip-tag {
+      padding: 4px 10px;
+      background: #252525;
+      border: 1px solid #353535;
+      border-radius: 10px;
+      color: #888;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .clip-tag:hover { background: #2e2e2e; color: #ccc; }
+    .clip-tag.active { background: #152040; border-color: #2b5ce6; color: #6fa8ff; }
+
+    .anim-speed {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #555;
+    }
+    #speed-range { width: 70px; accent-color: #2b5ce6; }
+
+    #anim-time {
+      font-size: 11px;
+      color: #555;
+      min-width: 80px;
+      text-align: right;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Timeline scrubber */
+    #timeline-wrap {
+      padding: 0 12px 6px;
+    }
+    #timeline {
+      width: 100%;
+      height: 3px;
+      accent-color: #2b5ce6;
+      cursor: pointer;
+    }
+
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    #error-banner {
+      position: absolute;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #3a1a1a;
+      border: 1px solid #7a2a2a;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 12px;
+      color: #e08080;
+      display: none;
+      white-space: nowrap;
+      max-width: 90%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ---- Lights Panel ---- */
+    #lights-panel {
+      flex-shrink: 0;
+      border-top: 1px solid #262626;
+      background: #191919;
+    }
+    #lights-header {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    #lights-header:hover { background: #202020; }
+    #lights-header-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #505050;
+      flex: 1;
+    }
+    #lights-chevron {
+      color: #404040;
+      font-size: 9px;
+      transition: transform 0.18s;
+    }
+    #lights-panel.open #lights-chevron { transform: rotate(180deg); }
+    #lights-body { display: none; padding: 2px 0 8px; }
+    #lights-panel.open #lights-body { display: block; }
+
+    .light-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 12px;
+    }
+    .light-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.15s, box-shadow 0.15s;
+      box-shadow: 0 0 4px rgba(255,255,255,0.15);
+    }
+    .light-dot.off { opacity: 0.18; box-shadow: none; }
+    .light-label {
+      font-size: 11px;
+      color: #666;
+      width: 46px;
+      flex-shrink: 0;
+    }
+    .light-color {
+      width: 20px;
+      height: 14px;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      background: none;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .light-intensity {
+      flex: 1;
+      accent-color: #2b5ce6;
+      cursor: pointer;
+    }
+    .light-val {
+      font-size: 10px;
+      color: #4a4a4a;
+      width: 26px;
+      text-align: right;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>3D Viewer</h1>
+  <span class="sep">|</span>
+  <span id="model-name-display">No model loaded</span>
+</div>
+
+<div id="body">
+  <aside id="sidebar">
+    <div id="sidebar-top">
+      <button id="open-folder-btn">Open Folder</button>
+      <div id="path-bar">No folder open</div>
+    </div>
+    <div id="file-list">
+      <div class="no-files-msg">Open a folder to browse<br>3D models</div>
+    </div>
+
+    <div id="lights-panel" class="open">
+      <div id="lights-header">
+        <span id="lights-header-label">Lights</span>
+        <span id="lights-chevron">&#9650;</span>
+      </div>
+      <div id="lights-body">
+        <div class="light-row" data-light="ambient">
+          <div class="light-dot" style="background:#ffffff"></div>
+          <span class="light-label">Ambient</span>
+          <input type="color" class="light-color" value="#ffffff">
+          <input type="range" class="light-intensity" min="0" max="3" step="0.05" value="0.7">
+          <span class="light-val">0.7</span>
+        </div>
+        <div class="light-row" data-light="key">
+          <div class="light-dot" style="background:#ffffff"></div>
+          <span class="light-label">Key</span>
+          <input type="color" class="light-color" value="#ffffff">
+          <input type="range" class="light-intensity" min="0" max="5" step="0.1" value="1.4">
+          <span class="light-val">1.4</span>
+        </div>
+        <div class="light-row" data-light="fill">
+          <div class="light-dot" style="background:#99aaff"></div>
+          <span class="light-label">Fill</span>
+          <input type="color" class="light-color" value="#99aaff">
+          <input type="range" class="light-intensity" min="0" max="3" step="0.05" value="0.4">
+          <span class="light-val">0.4</span>
+        </div>
+        <div class="light-row" data-light="hemi">
+          <div class="light-dot" style="background:#334466"></div>
+          <span class="light-label">Sky</span>
+          <input type="color" class="light-color" value="#334466">
+          <input type="range" class="light-intensity" min="0" max="3" step="0.05" value="0.5">
+          <span class="light-val">0.5</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="viewer-wrap">
+    <div id="canvas-container">
+      <canvas id="render-canvas"></canvas>
+
+      <div id="empty-state">
+        <svg class="empty-icon" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M36 6L66 22V50L36 66L6 50V22L36 6Z" stroke="#444" stroke-width="2" fill="none"/>
+          <path d="M36 6V66M6 22L36 38L66 22" stroke="#444" stroke-width="1.5"/>
+        </svg>
+        <p>Select a model from the sidebar</p>
+        <small>Supports GLB, GLTF, OBJ, FBX, STL</small>
+      </div>
+
+      <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div id="loading-text">Loading...</div>
+      </div>
+
+      <div id="view-controls">
+        <button class="vbtn" id="btn-reset-cam">Reset Camera</button>
+        <button class="vbtn" id="btn-grid">Hide Grid</button>
+        <button class="vbtn" id="btn-wireframe">Wireframe</button>
+        <button class="vbtn" id="btn-helpers">Light Helpers</button>
+        <button class="vbtn" id="btn-stats">Stats</button>
+      </div>
+
+      <div id="stats-hud"></div>
+      <div id="error-banner"></div>
+    </div>
+
+    <div id="anim-panel">
+      <div id="anim-bar">
+        <span id="anim-title">Animations</span>
+        <div class="anim-transport">
+          <button id="btn-play">&#9654;</button>
+          <button id="btn-stop">&#9632;</button>
+        </div>
+        <div id="clip-list"></div>
+        <div class="anim-speed">
+          <span>Speed</span>
+          <input type="range" id="speed-range" min="0.1" max="3" step="0.1" value="1">
+          <span id="speed-val">1.0x</span>
+        </div>
+        <div id="anim-time">0.00 / 0.00</div>
+      </div>
+      <div id="timeline-wrap">
+        <input type="range" id="timeline" min="0" max="100" step="0.1" value="0">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader }     from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader }     from 'three/addons/loaders/MTLLoader.js';
+import { FBXLoader }     from 'three/addons/loaders/FBXLoader.js';
+import { STLLoader }     from 'three/addons/loaders/STLLoader.js';
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let scene, camera, renderer, controls;
+let currentModel  = null;
+let mixer         = null;
+let currentAction = null;
+let activeClipIdx = -1;
+let animClips     = [];
+let clock         = new THREE.Clock();
+let isPlaying     = false;
+let gridHelper    = null;
+let wireframe     = false;
+let statsShown    = false;
+
+// Lights
+const lights = { ambient: null, key: null, fill: null, hemi: null };
+let lightHelpers    = [];
+let helpersVisible  = false;
+
+let dirStack   = [];   // stack of { handle, name } for directory navigation
+let fileMap    = new Map();  // lowercase filename -> blob URL
+let allBlobURLs = [];  // for cleanup
+
+const MODEL_EXTS = new Set(['glb', 'gltf', 'obj', 'fbx', 'stl']);
+
+// ─── Three.js Init ────────────────────────────────────────────────────────────
+function initThree() {
+  const container = document.getElementById('canvas-container');
+  const canvas    = document.getElementById('render-canvas');
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x111111);
+
+  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.01, 50000);
+  camera.position.set(4, 3, 6);
+
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace  = THREE.SRGBColorSpace;
+  renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+
+  // Lights
+  lights.ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(lights.ambient);
+
+  lights.key = new THREE.DirectionalLight(0xffffff, 1.4);
+  lights.key.position.set(6, 12, 8);
+  lights.key.castShadow = true;
+  lights.key.shadow.mapSize.set(2048, 2048);
+  lights.key.shadow.camera.near = 0.1;
+  lights.key.shadow.camera.far  = 1000;
+  scene.add(lights.key);
+
+  lights.fill = new THREE.DirectionalLight(0x99aaff, 0.4);
+  lights.fill.position.set(-6, 4, -6);
+  scene.add(lights.fill);
+
+  lights.hemi = new THREE.HemisphereLight(0x334466, 0x112211, 0.5);
+  scene.add(lights.hemi);
+
+  // Light helpers (hidden by default)
+  const keyHelper  = new THREE.DirectionalLightHelper(lights.key, 1.4);
+  const fillHelper = new THREE.DirectionalLightHelper(lights.fill, 0.9);
+  keyHelper.visible  = false;
+  fillHelper.visible = false;
+  scene.add(keyHelper);
+  scene.add(fillHelper);
+  lightHelpers = [keyHelper, fillHelper];
+
+  setupLightControls();
+
+  // Grid
+  gridHelper = new THREE.GridHelper(60, 60, 0x2c2c2c, 0x242424);
+  scene.add(gridHelper);
+
+  // Controls
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping  = true;
+  controls.dampingFactor  = 0.07;
+  controls.minDistance    = 0.05;
+  controls.maxDistance    = 20000;
+
+  // Resize
+  const ro = new ResizeObserver(() => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+  ro.observe(container);
+
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  if (mixer && isPlaying) {
+    mixer.update(delta);
+    syncTimeline();
+  }
+  if (helpersVisible) lightHelpers.forEach(h => h.update());
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ─── Directory Browsing ───────────────────────────────────────────────────────
+document.getElementById('open-folder-btn').addEventListener('click', async () => {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'read' });
+    dirStack = [{ handle, name: handle.name }];
+    await loadDirectory(handle);
+  } catch (e) {
+    if (e.name !== 'AbortError') showError('Could not open folder: ' + e.message);
+  }
+});
+
+// Recursively collect all files from subdirectories (max 4 levels deep) into fileMap.
+// This ensures textures stored in textures/, maps/, images/ etc. are resolvable.
+async function collectSubdirFiles(dirHandles, depth = 0) {
+  if (depth > 4) return;
+  await Promise.all(dirHandles.map(async dirHandle => {
+    try {
+      const childDirs = [];
+      for await (const [name, entry] of dirHandle.entries()) {
+        if (entry.kind === 'file') {
+          const key = name.toLowerCase();
+          if (!fileMap.has(key)) {   // don't overwrite a same-name file from parent
+            try {
+              const file = await entry.getFile();
+              const url  = URL.createObjectURL(file);
+              allBlobURLs.push(url);
+              fileMap.set(key, url);
+            } catch (_) {}
+          }
+        } else if (entry.kind === 'directory') {
+          childDirs.push(entry);
+        }
+      }
+      if (childDirs.length) await collectSubdirFiles(childDirs, depth + 1);
+    } catch (_) {}
+  }));
+}
+
+async function loadDirectory(handle) {
+  // Revoke previous blob URLs
+  for (const url of allBlobURLs) URL.revokeObjectURL(url);
+  allBlobURLs = [];
+  fileMap.clear();
+
+  const dirs   = [];
+  const models = [];
+  const others = [];
+
+  for await (const [name, entry] of handle.entries()) {
+    if (entry.kind === 'directory') {
+      dirs.push({ name, handle: entry });
+    } else {
+      const ext = name.split('.').pop().toLowerCase();
+      if (MODEL_EXTS.has(ext)) {
+        models.push({ name, handle: entry, ext });
+      } else {
+        others.push({ name, handle: entry, ext });
+      }
+    }
+  }
+
+  // Build blob URL map — flat files in this directory first
+  const allFiles = [...models, ...others];
+  await Promise.all(allFiles.map(async f => {
+    try {
+      const file = await f.handle.getFile();
+      const url  = URL.createObjectURL(file);
+      allBlobURLs.push(url);
+      fileMap.set(f.name.toLowerCase(), url);
+    } catch (_) { /* skip unreadable files */ }
+  }));
+
+  // Also recursively scan subdirectories so textures in subfolders (e.g. textures/, maps/)
+  // are resolvable when a model references them by bare filename.
+  await collectSubdirFiles(dirs.map(d => d.handle));
+
+  dirs.sort((a, b) => a.name.localeCompare(b.name));
+  models.sort((a, b) => a.name.localeCompare(b.name));
+
+  // Path bar
+  document.getElementById('path-bar').textContent =
+    dirStack.map(d => d.name).join(' / ');
+
+  renderFileList(dirs, models);
+}
+
+function renderFileList(dirs, models) {
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+
+  // Back button
+  if (dirStack.length > 1) {
+    const item = makeItem('folder', '.. (parent folder)', () => {
+      dirStack.pop();
+      loadDirectory(dirStack[dirStack.length - 1].handle);
+    });
+    item.classList.add('dir');
+    list.appendChild(item);
+  }
+
+  if (dirs.length) {
+    list.appendChild(sectionLabel('Folders'));
+    for (const d of dirs) {
+      const item = makeItem('folder', d.name, () => {
+        dirStack.push({ handle: d.handle, name: d.name });
+        loadDirectory(d.handle);
+      });
+      item.classList.add('dir');
+      list.appendChild(item);
+    }
+  }
+
+  if (models.length) {
+    list.appendChild(sectionLabel(`Models (${models.length})`));
+    for (const m of models) {
+      const item = makeItem('model', m.name, (el) => loadModel(m, el));
+      const badge = document.createElement('span');
+      badge.className = `fi-badge ${m.ext}`;
+      badge.textContent = m.ext;
+      item.appendChild(badge);
+      list.appendChild(item);
+    }
+  }
+
+  if (!dirs.length && !models.length) {
+    const msg = document.createElement('div');
+    msg.className = 'no-files-msg';
+    msg.textContent = 'No 3D models found in this folder';
+    list.appendChild(msg);
+  }
+}
+
+function sectionLabel(text) {
+  const el = document.createElement('div');
+  el.className = 'section-label';
+  el.textContent = text;
+  return el;
+}
+
+function makeItem(type, name, onClick) {
+  const item = document.createElement('div');
+  item.className = 'file-item';
+  item.innerHTML = `
+    <span class="fi-icon">${type === 'folder' ? '&#9654;' : '&#9671;'}</span>
+    <span class="fi-name">${name}</span>
+  `;
+  item.addEventListener('click', () => onClick(item));
+  return item;
+}
+
+// ─── Model Loading ────────────────────────────────────────────────────────────
+async function loadModel(info, itemEl) {
+  // Mark active
+  document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+  itemEl.classList.add('active');
+
+  clearScene();
+  showLoading(true, `Loading ${info.name}...`);
+  document.getElementById('empty-state').style.display = 'none';
+  clearError();
+
+  // Build a manager that maps filenames to blob URLs
+  const manager = new THREE.LoadingManager();
+  manager.setURLModifier(url => {
+    const filename = decodeURIComponent(url.split('/').pop()).toLowerCase();
+    return fileMap.get(filename) || url;
+  });
+
+  const blobUrl = fileMap.get(info.name.toLowerCase());
+
+  try {
+    let object3d;
+    let animations = [];
+
+    if (info.ext === 'glb' || info.ext === 'gltf') {
+      const loader = new GLTFLoader(manager);
+      const gltf = await loader.loadAsync(blobUrl);
+      object3d   = gltf.scene;
+      animations = gltf.animations || [];
+
+    } else if (info.ext === 'obj') {
+      const mtlName = info.name.replace(/\.obj$/i, '.mtl');
+      const mtlUrl  = fileMap.get(mtlName.toLowerCase());
+      if (mtlUrl) {
+        const mtlLoader = new MTLLoader(manager);
+        const materials = await mtlLoader.loadAsync(mtlUrl);
+        materials.preload();
+        const objLoader = new OBJLoader(manager);
+        objLoader.setMaterials(materials);
+        object3d = await objLoader.loadAsync(blobUrl);
+      } else {
+        const objLoader = new OBJLoader(manager);
+        object3d = await objLoader.loadAsync(blobUrl);
+      }
+
+    } else if (info.ext === 'fbx') {
+      const loader = new FBXLoader(manager);
+      object3d   = await loader.loadAsync(blobUrl);
+      animations = object3d.animations || [];
+
+    } else if (info.ext === 'stl') {
+      const loader   = new STLLoader(manager);
+      const geometry = await loader.loadAsync(blobUrl);
+      geometry.computeVertexNormals();
+      const material = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.55, metalness: 0.1 });
+      object3d = new THREE.Mesh(geometry, material);
+    }
+
+    if (!object3d) throw new Error('Unsupported or empty model');
+
+    // Enable shadows on all meshes
+    object3d.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow    = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    fitToView(object3d);
+    scene.add(object3d);
+    currentModel = object3d;
+
+    setupAnimations(object3d, animations);
+    updateStats(object3d, info.name);
+    document.getElementById('model-name-display').textContent = info.name;
+
+  } catch (err) {
+    console.error(err);
+    showError(`Failed to load "${info.name}": ${err.message}`);
+    document.getElementById('empty-state').style.display = 'flex';
+  } finally {
+    showLoading(false);
+  }
+}
+
+// ─── Scene Helpers ────────────────────────────────────────────────────────────
+function fitToView(object) {
+  // Reset transforms
+  object.position.set(0, 0, 0);
+  object.rotation.set(0, 0, 0);
+  object.scale.set(1, 1, 1);
+
+  const box    = new THREE.Box3().setFromObject(object);
+  const size   = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+
+  if (maxDim === 0) return;
+
+  const targetSize = 4;
+  const scale = targetSize / maxDim;
+  object.scale.setScalar(scale);
+
+  // Re-center on X/Z, sit on Y=0
+  object.position.set(
+    -center.x * scale,
+    -box.min.y * scale,
+    -center.z * scale
+  );
+
+  const scaledHeight = size.y * scale;
+  const dist = targetSize * 2.4;
+  camera.position.set(dist, scaledHeight * 0.6 + dist * 0.4, dist);
+  controls.target.set(0, scaledHeight * 0.5, 0);
+  controls.update();
+}
+
+function clearScene() {
+  if (currentModel) {
+    scene.remove(currentModel);
+    currentModel.traverse(child => {
+      if (child.isMesh) {
+        child.geometry?.dispose();
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => {
+          if (!m) return;
+          Object.values(m).forEach(v => { if (v?.isTexture) v.dispose(); });
+          m.dispose();
+        });
+      }
+    });
+    currentModel = null;
+  }
+  if (mixer) { mixer.stopAllAction(); mixer = null; }
+  currentAction = null;
+  animClips     = [];
+  activeClipIdx = -1;
+  isPlaying     = false;
+  document.getElementById('btn-play').innerHTML = '&#9654;';
+  document.getElementById('anim-panel').classList.remove('show');
+  document.getElementById('stats-hud').classList.remove('show');
+}
+
+// ─── Animations ───────────────────────────────────────────────────────────────
+function setupAnimations(object, animations) {
+  if (!animations.length) return;
+
+  animClips = animations;
+  mixer     = new THREE.AnimationMixer(object);
+
+  // Build clip list
+  const clipList = document.getElementById('clip-list');
+  clipList.innerHTML = '';
+  animations.forEach((clip, i) => {
+    const tag = document.createElement('button');
+    tag.className   = 'clip-tag';
+    tag.textContent = clip.name || `Clip ${i + 1}`;
+    tag.addEventListener('click', () => activateClip(i));
+    clipList.appendChild(tag);
+  });
+
+  document.getElementById('anim-panel').classList.add('show');
+  activateClip(0);
+}
+
+function activateClip(index) {
+  if (!mixer || !animClips[index]) return;
+  if (currentAction) currentAction.fadeOut(0.2);
+
+  activeClipIdx = index;
+  currentAction = mixer.clipAction(animClips[index]);
+  currentAction.reset().fadeIn(0.2).play();
+  isPlaying = true;
+
+  document.getElementById('btn-play').innerHTML = '&#9646;&#9646;';
+  document.querySelectorAll('.clip-tag').forEach((el, i) =>
+    el.classList.toggle('active', i === index));
+
+  // Set timeline max
+  document.getElementById('timeline').max = animClips[index].duration;
+  document.getElementById('timeline').value = 0;
+}
+
+function syncTimeline() {
+  if (!currentAction) return;
+  const clip = currentAction.getClip();
+  const t    = currentAction.time;
+  const dur  = clip.duration;
+  document.getElementById('anim-time').textContent =
+    `${t.toFixed(2)} / ${dur.toFixed(2)}`;
+  document.getElementById('timeline').value = t;
+}
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  if (!mixer || !currentAction) return;
+  isPlaying = !isPlaying;
+  currentAction.paused = !isPlaying;
+  if (isPlaying) currentAction.play();
+  document.getElementById('btn-play').innerHTML = isPlaying ? '&#9646;&#9646;' : '&#9654;';
+});
+
+document.getElementById('btn-stop').addEventListener('click', () => {
+  if (!currentAction) return;
+  currentAction.stop();
+  isPlaying = false;
+  document.getElementById('btn-play').innerHTML = '&#9654;';
+  document.getElementById('timeline').value = 0;
+  document.getElementById('anim-time').textContent = '0.00 / ' +
+    (animClips[activeClipIdx]?.duration.toFixed(2) ?? '0.00');
+});
+
+document.getElementById('speed-range').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  document.getElementById('speed-val').textContent = v.toFixed(1) + 'x';
+  if (mixer) mixer.timeScale = v;
+});
+
+// Scrubbing
+let scrubbing = false;
+const timeline = document.getElementById('timeline');
+timeline.addEventListener('mousedown', () => {
+  scrubbing = true;
+  if (isPlaying && currentAction) currentAction.paused = true;
+});
+timeline.addEventListener('input', () => {
+  if (!currentAction || !scrubbing) return;
+  currentAction.time = parseFloat(timeline.value);
+  mixer.update(0);
+});
+timeline.addEventListener('mouseup', () => {
+  scrubbing = false;
+  if (isPlaying && currentAction) currentAction.paused = false;
+});
+
+// ─── Viewer Controls ──────────────────────────────────────────────────────────
+document.getElementById('btn-reset-cam').addEventListener('click', () => {
+  if (currentModel) fitToView(currentModel);
+});
+
+document.getElementById('btn-grid').addEventListener('click', function() {
+  gridHelper.visible = !gridHelper.visible;
+  this.textContent = gridHelper.visible ? 'Hide Grid' : 'Show Grid';
+  this.classList.toggle('active', !gridHelper.visible);
+});
+
+document.getElementById('btn-wireframe').addEventListener('click', function() {
+  wireframe = !wireframe;
+  this.textContent = wireframe ? 'Solid' : 'Wireframe';
+  this.classList.toggle('active', wireframe);
+  if (currentModel) {
+    currentModel.traverse(child => {
+      if (child.isMesh) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach(m => { if (m) m.wireframe = wireframe; });
+      }
+    });
+  }
+});
+
+document.getElementById('btn-stats').addEventListener('click', function() {
+  statsShown = !statsShown;
+  this.classList.toggle('active', statsShown);
+  document.getElementById('stats-hud').classList.toggle('show', statsShown && !!currentModel);
+});
+
+function updateStats(object, filename) {
+  let meshCount = 0, vertCount = 0, triCount = 0;
+  object.traverse(child => {
+    if (!child.isMesh) return;
+    meshCount++;
+    const geo = child.geometry;
+    if (geo.attributes.position) vertCount += geo.attributes.position.count;
+    if (geo.index)  triCount += geo.index.count / 3;
+    else if (geo.attributes.position) triCount += geo.attributes.position.count / 3;
+  });
+  document.getElementById('stats-hud').innerHTML =
+    `<strong>${filename}</strong>` +
+    `Meshes: ${meshCount.toLocaleString()}<br>` +
+    `Vertices: ${Math.round(vertCount).toLocaleString()}<br>` +
+    `Triangles: ${Math.round(triCount).toLocaleString()}`;
+  if (statsShown) document.getElementById('stats-hud').classList.add('show');
+}
+
+// ─── Light Controls ───────────────────────────────────────────────────────────
+function setupLightControls() {
+  // Collapse toggle
+  document.getElementById('lights-header').addEventListener('click', () => {
+    document.getElementById('lights-panel').classList.toggle('open');
+  });
+
+  document.querySelectorAll('.light-row').forEach(row => {
+    const key      = row.dataset.light;
+    const dot      = row.querySelector('.light-dot');
+    const picker   = row.querySelector('.light-color');
+    const slider   = row.querySelector('.light-intensity');
+    const valLabel = row.querySelector('.light-val');
+
+    // Dot starts in "on" state
+    dot.classList.add('on');
+
+    // Toggle on/off by clicking the dot
+    dot.addEventListener('click', () => {
+      const light = lights[key];
+      if (!light) return;
+      if (dot.classList.contains('on')) {
+        light._saved = light.intensity;
+        light.intensity = 0;
+        dot.classList.replace('on', 'off');
+      } else {
+        light.intensity = light._saved ?? parseFloat(slider.value);
+        slider.value    = light.intensity;
+        valLabel.textContent = light.intensity.toFixed(2);
+        dot.classList.replace('off', 'on');
+      }
+      lightHelpers.forEach(h => h.update && h.update());
+    });
+
+    // Color picker
+    picker.addEventListener('input', e => {
+      const light = lights[key];
+      if (!light) return;
+      light.color.set(e.target.value);
+      dot.style.background = e.target.value;
+      lightHelpers.forEach(h => h.update && h.update());
+    });
+
+    // Intensity slider
+    slider.addEventListener('input', e => {
+      const light = lights[key];
+      if (!light) return;
+      const val = parseFloat(e.target.value);
+      light.intensity = val;
+      valLabel.textContent = val.toFixed(2);
+      if (val > 0 && dot.classList.contains('off')) {
+        dot.classList.replace('off', 'on');
+      } else if (val === 0) {
+        dot.classList.replace('on', 'off');
+      }
+    });
+  });
+}
+
+document.getElementById('btn-helpers').addEventListener('click', function() {
+  helpersVisible = !helpersVisible;
+  lightHelpers.forEach(h => { h.visible = helpersVisible; });
+  this.classList.toggle('active', helpersVisible);
+  this.textContent = helpersVisible ? 'Hide Helpers' : 'Light Helpers';
+});
+
+// ─── UI Helpers ───────────────────────────────────────────────────────────────
+function showLoading(visible, text = '') {
+  document.getElementById('loading-overlay').classList.toggle('show', visible);
+  if (text) document.getElementById('loading-text').textContent = text;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 7000);
+}
+
+function clearError() {
+  document.getElementById('error-banner').style.display = 'none';
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+if (!window.showDirectoryPicker) {
+  document.getElementById('open-folder-btn').textContent = 'Not supported in this browser';
+  document.getElementById('open-folder-btn').disabled = true;
+  document.getElementById('path-bar').textContent = 'Use Chrome or Edge';
+}
+
+initThree();
+</script>
+</body>
+</html>
